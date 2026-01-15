@@ -1,0 +1,253 @@
+_USE_MATH_DEFINES
+
+#include <iostream>
+#include <fstream>
+#include <cmath>
+#include <random>
+
+class Error 
+{
+public:
+    virtual ~Error() = default;
+    virtual const char* err() const { return "Unknown error"; }
+};
+
+class GeneratorError : public Error 
+{
+public:
+    const char* err() const override { return "Generator error occurred"; }
+};
+
+class TestError : public Error 
+{
+public:
+    const char* err() const override { return "Test error occurred"; }
+};
+
+class FileError : public Error 
+{
+public:
+    const char* err() const override { return "File error occurred"; }
+};
+
+class Generator 
+{
+protected:
+    std::uniform_real_distribution<double> dist;
+    std::mt19937 gen;
+
+public:
+    Generator() : dist(0.0, 1.0) { }
+    
+    virtual double generate() 
+    { 
+        return dist(gen); 
+    }
+    
+    virtual ~Generator() = default;
+};
+
+class DiscreteGenerator : public Generator 
+{
+protected:
+    double* probs;
+    int size;
+    double* values;
+
+public:
+    DiscreteGenerator(double* p, double* v, int s) : size(s) 
+    {
+        probs = new double[size];
+        values = new double[size];
+        
+        for (int i = 0; i < size; i++) 
+        {
+            probs[i] = p[i];
+            values[i] = v[i];
+        }
+    }
+
+    ~DiscreteGenerator() 
+    {
+        delete[] probs;
+        delete[] values;
+    }
+
+    double generate() override 
+    {
+        double u = Generator::generate();
+        double sum = 0;
+        
+        for (int i = 0; i < size; i++) 
+        {
+            sum += probs[i];
+        }
+        
+        if (sum != 1) 
+        {
+            throw GeneratorError();
+        }
+
+        double cumulative = 0.0;
+        
+        for (int i = 0; i < size; i++) 
+        {
+            cumulative += probs[i];
+            if (u <= cumulative) 
+            {
+                return values[i];
+            }
+        }
+        
+        return values[size - 1];
+    }
+};
+
+class ContinuousGenerator : public Generator 
+{
+public:
+    double generate() override 
+    { 
+        return 0; 
+    }
+};
+
+class ExponentialGenerator : public ContinuousGenerator 
+{
+private:
+    double lambda;
+
+public:
+    ExponentialGenerator(double lambd) : lambda(lambd) 
+    {
+        if (lambda <= 0) 
+        {
+            throw GeneratorError();
+        }
+    }
+
+    double generate() override 
+    {
+        double u = Generator::generate();
+        return -log(1.0 - u) / lambda;
+    }
+};
+
+class CauchyGenerator : public ContinuousGenerator 
+{
+private:
+    double x0;
+    double gamma;
+
+public:
+    CauchyGenerator(double val, double g) : x0(val), gamma(g) 
+    {
+        if (gamma <= 0) 
+        {
+            throw GeneratorError();
+        }
+    }
+
+    double generate() override 
+    {
+        double u = Generator::generate();
+        return x0 + gamma * tan(M_PI * (u - 0.5));
+    }
+};
+
+class Test 
+{
+protected:
+    Generator* generator;
+
+public:
+    Test(Generator* gen) : generator(gen) 
+    {
+        if (gen == nullptr) 
+        {
+            throw TestError();
+        }
+    }
+
+    virtual ~Test() { }
+
+    void run(const char* filename, int samples = 1000) 
+    {
+        std::ofstream outFile(filename);
+        
+        if (!outFile.is_open()) 
+        {
+            throw FileError();
+        }
+
+        for (int i = 0; i < samples; i++) 
+        {
+            double val = generator->generate();
+            outFile << val << std::endl;
+        }
+        
+        outFile.close();
+    }
+};
+
+class Presenter 
+{
+public:
+    void Execute() 
+    {
+        // Тест 1
+        double probs1[] = { 0.2, 0.3, 0.5 };
+        double vals1[] = { 1.0, 2.0, 3.0 };
+        
+        DiscreteGenerator dgen1(probs1, vals1, 3);
+        ExponentialGenerator egen1(1.5);
+        CauchyGenerator cgen1(0.0, 1.0);
+
+        Test testD1(&dgen1);
+        Test testE1(&egen1);
+        Test testC1(&cgen1);
+
+        testD1.run("Discrete3.txt");
+        testE1.run("Exponential1.txt");
+        testC1.run("Cauchy1.txt");
+
+        // Тест 2
+        double probs2[] = { 0.4, 0.6 };
+        double vals2[] = { 10.0, 20.0 };
+        
+        DiscreteGenerator dgen2(probs2, vals2, 2);
+        ExponentialGenerator egen2(0.5);
+        CauchyGenerator cgen2(2.0, 0.5);
+
+        Test testD2(&dgen2);
+        Test testE2(&egen2);
+        Test testC2(&cgen2);
+
+        testD2.run("Discrete2.txt");
+        testE2.run("Exponential2.txt");
+        testC2.run("Cauchy2.txt");
+
+        // Тест 3
+        double probs3[] = { 0.25, 0.25, 0.25, 0.25 };
+        double vals3[] = { 1.0, 2.0, 3.0, 4.0 };
+        
+        DiscreteGenerator dgen3(probs3, vals3, 4);
+        ExponentialGenerator egen3(100.0);
+        CauchyGenerator cgen3(0.0, 10.0);
+
+        Test testD3(&dgen3);
+        Test testE3(&egen3);
+        Test testC3(&cgen3);
+
+        testD3.run("Discrete3.txt");
+        testE3.run("Exponential3.txt");
+        testC3.run("Cauchy3.txt");
+    }
+};
+
+int main() 
+{
+    Presenter presenter;
+    presenter.Execute();
+    return 0;
+}
